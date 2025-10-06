@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogTailer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="container">
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <h3>Tabs</h3>
+      </header>
+      <ul id="tab-list">
+        <!-- Tab items will be injected here by popup.js -->
+        <li class="tab-item placeholder">No active tabs with logs.</li>
+      </ul>
+    </aside>
+
+    <main class="main-content">
+      <header class="main-header">
+        <div class="filters">
+          <input type="search" id="search-box" placeholder="Search logs...">
+          <div class="level-filters">
+            <label><input type="checkbox" class="filter-level" value="log" checked> Log</label>
+            <label><input type="checkbox" class="filter-level" value="info" checked> Info</label>
+            <label><input type="checkbox" class="filter-level" value="warn" checked> Warn</label>
+            <label><input type="checkbox" class="filter-level" value="error" checked> Error</label>
+            <label><input type="checkbox" class="filter-level" value="debug" checked> Debug</label>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="clear-tab-btn" title="Clear logs for this tab">Clear Tab</button>
+          <button id="clear-all-btn" title="Clear all logs from all tabs">Clear All</button>
+          <button id="export-btn" title="Export all logs to a JSON file">Export All</button>
+        </div>
+      </header>
+      <div id="log-display">
+        <!-- Log entries will be injected here -->
+        <div class="log-entry log-placeholder">
+          <p>Select a tab to view its console logs.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

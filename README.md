@@ -136,6 +136,6 @@ Inspired by the need for a clean, no-build, developer-friendly log tailing exten
 
 ## 📜 License
 
-MIT License © 2025 EternalKnight002
+This project is licensed under the GNU General Public License v3.0 .
 
 ```

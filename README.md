@@ -61,7 +61,7 @@ logtailer/
 5. The LogTailer icon should now appear in your toolbar — pin it for quick access!
 
 ---
-
+````
 ## 🧪 How to Use
 
 1. Keep multiple tabs open (e.g. localhost app, API docs, etc.).

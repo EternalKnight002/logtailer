@@ -61,7 +61,7 @@ logtailer/
 5. The LogTailer icon should now appear in your toolbar — pin it for quick access!
 
 ---
-
+````
 ## 🧪 How to Use
 
 1. Keep multiple tabs open (e.g. localhost app, API docs, etc.).
@@ -136,6 +136,6 @@ Inspired by the need for a clean, no-build, developer-friendly log tailing exten
 
 ## 📜 License
 
-MIT License © 2025 EternalKnight002
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ```

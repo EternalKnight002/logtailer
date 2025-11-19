@@ -1,105 +1,122 @@
-// background.js - Service Worker
-
-// Initialize storage on installation
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({ logs: {}, tabs: {} });
-  console.log("LogTailer installed and storage initialized.");
+// Initialize state from storage
+chrome.storage.local.get([
+    "focusTime", "breakTime", "longBreakTime", "cyclesToLongBreak",
+    "currentMode", "isRunning", "timeLeft", "currentCycle"
+], (res) => {
+    chrome.storage.local.set({
+        focusTime: "focusTime" in res ? res.focusTime : 25,
+        breakTime: "breakTime" in res ? res.breakTime : 5,
+        longBreakTime: "longBreakTime" in res ? res.longBreakTime : 15,
+        cyclesToLongBreak: "cyclesToLongBreak" in res ? res.cyclesToLongBreak : 4,
+        currentMode: "currentMode" in res ? res.currentMode : "focus",
+        isRunning: "isRunning" in res ? res.isRunning : false,
+        currentCycle: "currentCycle" in res ? res.currentCycle : 1,
+        timeLeft: "timeLeft" in res ? res.timeLeft : (res.focusTime || 25) * 60,
+    });
 });
 
-// Main message listener
+let timerInterval;
+
+// Listen for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Handle new log entry from content script
-  if (request.type === 'LOGTAILER_LOG') {
-    const { tab } = sender;
-    if (tab && tab.id) {
-      handleNewLog(request.payload, tab);
-    }
-    return true; // Indicates we will send a response asynchronously
-  }
-
-  // Handle requests from the popup
-  if (request.from === 'popup') {
-    handlePopupRequest(request, sendResponse);
-    return true; // Indicates we will send a response asynchronously
-  }
+    if (request.command === "start") startTimer();
+    else if (request.command === "pause") pauseTimer();
+    else if (request.command === "reset") resetTimer();
 });
 
-// Clean up logs for closed tabs
-chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.local.get(['logs', 'tabs'], (result) => {
-    delete result.logs[tabId];
-    delete result.tabs[tabId];
-    chrome.storage.local.set({ logs: result.logs, tabs: result.tabs });
-  });
-});
-
-/**
- * Stores a new log entry and updates tab information.
- * @param {object} logEntry - The log data from inpage.js.
- * @param {object} tab - The tab object from the message sender.
- */
-async function handleNewLog(logEntry, tab) {
-  const { logs, tabs } = await chrome.storage.local.get(['logs', 'tabs']);
-  
-  // Initialize log array for the tab if it doesn't exist
-  if (!logs[tab.id]) {
-    logs[tab.id] = [];
-  }
-  
-  // Add new log
-  logs[tab.id].push(logEntry);
-
-  // Update tab info (title, favicon)
-  tabs[tab.id] = {
-    id: tab.id,
-    title: tab.title,
-    favIconUrl: tab.favIconUrl,
-  };
-
-  // Save back to storage
-  await chrome.storage.local.set({ logs, tabs });
-
-  // Notify the popup if it's open
-  chrome.runtime.sendMessage({
-    from: 'background',
-    type: 'NEW_LOG',
-    payload: { tabId: tab.id, logEntry, tabInfo: tabs[tab.id] }
-  }).catch(error => {
-    // Suppress "Receiving end does not exist" error when popup is closed.
-    if (error.message.includes('Receiving end does not exist')) return;
-    console.error('Error sending message to popup:', error);
-  });
+function startTimer() {
+    chrome.storage.local.set({ isRunning: true });
+    timerInterval = setInterval(() => {
+        chrome.storage.local.get("timeLeft", (res) => {
+            if (res.timeLeft <= 0) {
+                switchMode();
+                return;
+            }
+            const newTimeLeft = res.timeLeft - 1;
+            chrome.storage.local.set({ timeLeft: newTimeLeft });
+            updateIcon(newTimeLeft);
+        });
+    }, 1000);
 }
 
-/**
- * Handles various data requests from the popup UI.
- * @param {object} request - The message from the popup.
- * @param {function} sendResponse - The callback to send data back.
- */
-async function handlePopupRequest(request, sendResponse) {
-  const { type, payload } = request;
-  const { logs, tabs } = await chrome.storage.local.get(['logs', 'tabs']);
+function pauseTimer() {
+    clearInterval(timerInterval);
+    chrome.storage.local.set({ isRunning: false });
+}
 
-  switch (type) {
-    case 'GET_INITIAL_DATA':
-      sendResponse({ logs, tabs });
-      break;
+// --- THIS IS THE FIXED FUNCTION ---
+function resetTimer() {
+    pauseTimer();
+    // Fetch focusTime so we can reset to the very beginning of a work session
+    chrome.storage.local.get(["focusTime"], (res) => {
+        const initialTime = (res.focusTime || 25) * 60;
+        
+        // Force everything back to the start
+        chrome.storage.local.set({
+            timeLeft: initialTime,
+            currentMode: "focus",  // Always go back to Focus mode
+            currentCycle: 1,       // Always reset cycle count to 1
+            isRunning: false
+        });
+        
+        updateIcon(initialTime);
+    });
+}
+// ---------------------------------
 
-    case 'CLEAR_TAB_LOGS':
-      if (logs[payload.tabId]) {
-        logs[payload.tabId] = [];
-        await chrome.storage.local.set({ logs });
-        sendResponse({ success: true, tabId: payload.tabId });
-      }
-      break;
+function switchMode() {
+    pauseTimer();
+    chrome.storage.local.get([
+        "currentMode", "currentCycle", "cyclesToLongBreak",
+        "focusTime", "breakTime", "longBreakTime"
+    ], (res) => {
+        let newMode, newTimeLeft, newCycle = res.currentCycle;
+        let notificationTitle, notificationMessage;
 
-    case 'CLEAR_ALL_LOGS':
-      await chrome.storage.local.set({ logs: {}, tabs: {} });
-      sendResponse({ success: true });
-      break;
-    
-    default:
-      sendResponse({ success: false, error: 'Unknown request type' });
-      break;
-  }
+        if (res.currentMode === "focus") {
+            // Finished a focus session
+            if (res.currentCycle >= res.cyclesToLongBreak) {
+                // Time for a long break
+                newMode = "longBreak";
+                newTimeLeft = res.longBreakTime * 60;
+                newCycle = 1; // Reset cycle count after a long break
+                notificationTitle = "Time for a long break!";
+                notificationMessage = `Great work! Take a ${res.longBreakTime}-minute rest.`;
+            } else {
+                // Time for a short break
+                newMode = "break";
+                newTimeLeft = res.breakTime * 60;
+                notificationTitle = "Focus session over!";
+                notificationMessage = `Time for a ${res.breakTime}-minute break.`;
+            }
+        } else {
+            // Finished a break (short or long), start next focus session
+            newMode = "focus";
+            newTimeLeft = res.focusTime * 60;
+            // Increment cycle only if coming from a short break
+            if (res.currentMode === "break") newCycle = res.currentCycle + 1;
+            notificationTitle = "Break is over!";
+            notificationMessage = `Time to start your next ${res.focusTime}-minute focus session!`;
+        }
+
+        chrome.storage.local.set({
+            currentMode: newMode,
+            timeLeft: newTimeLeft,
+            isRunning: false,
+            currentCycle: newCycle,
+        });
+
+        chrome.notifications.create({
+            type: "basic", iconUrl: "icons/icon128.png",
+            title: notificationTitle, message: notificationMessage,
+            priority: 2
+        });
+        updateIcon(newTimeLeft);
+    });
+}
+
+function updateIcon(timeLeft) {
+    const minutes = Math.ceil(timeLeft / 60);
+    chrome.action.setBadgeText({ text: `${minutes}` });
+    chrome.action.setBadgeBackgroundColor({ color: '#4A90E2' });
 }
